@@ -1,0 +1,26 @@
+{
+    "comment": "Copy this file to `config.json` and edit for your local setup. Paths: osm_data is the folder containing all the .osm.pbf extracts, containing the road networks; input_data contains a shapefile with the NUTS-3 region; an excel file with the osm_mapping and settings for the damage curves; an excel file with Eurostat national GDP; a pickle with the default number of lanes per country/road-type; a pickle with the NUTS3-names of all regions. ||||||||||||| THIS IS A SPECIAL VERSION OF THE CONFIG FILE, TO MAKE THE VALIDATION CASE",
+    "paths": {
+        "osm_data": "D:\\Europe_trade_disruptions\\OSM_extracts\\europe_regions_pbf_VM",
+        "input_data" : "D:\\Europe_trade_disruptions\\Input_data",
+		"hazard_data" : "D:\\Europe_trade_disruptions\\VerificationPoints\\2013-06-05 Deggendorf-straubing\\rasters",
+        "fpl_raster" : "D:\\Europe_trade_disruptions\\ProtSt_Jongman\\floodProtection_v2019_5km_nibbled_downscaled_100_100.tif",
+        "aoi_data" : "D:\\Europe_trade_disruptions\\JRC_riverflood_Europe\\floodMaps_Europe_2018_AreaofInfluence_shifted",
+        "climate_change" : "D:\\Europe_trade_disruptions\\JRC_riverflood_Europe\\climatescenarios",
+        "climate_change_fpl" : "D:\\Europe_trade_disruptions\\JRC_riverflood_Europe\\climatescenarios_fpl",
+		"output" : "D:\\Europe_trade_disruptions\\EuropeFloodResults\\Model10\\main_Deggendorf",
+        "fpl_aoi_output" : "D:\\Europe_trade_disruptions\\EuropeFloodResults\\Model10\\fpl_aoi",        
+        "postproc_output" : "D:\\Europe_trade_disruptions\\EuropeFloodResults\\Model09_beta\\postproc"
+		},
+    "filenames": {
+        "default_lanes" : "default_lanes_temp.pkl",
+        "GDP_corr" : "Eurostat_realGDPpercap_NUTS0.xlsx",
+        "SSP_corr" : "SSPs_GDPpercap.xlsx",
+        "map_dam_curves" : "Mapping_maxdamage_curves4.xlsx",
+        "NUTS3-shape" : "NUTS_RG_01M_2016_3035_LEVL_3.shp",
+        "NUTS2-shape" : "NUTS_RG_01M_2016_3035_LEVL_2.shp",
+        "NUTS1-shape" : "NUTS_RG_01M_2016_3035_LEVL_1.shp",
+        "NUTS0-shape" : "NUTS_RG_01M_2016_3035_LEVL_0.shp",
+        "NUTS3-names" : "NUTS3-names.pkl"
+    }
+}

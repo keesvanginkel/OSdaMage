@@ -1,0 +1,30 @@
+name: Leerdam37
+
+channels:
+  - conda-forge
+  - defaults
+  - conda-forge/label/dev
+
+dependencies:
+  - python>=3.7
+  - numpy
+  - xarray>=0.10
+  - pandas
+  - geopandas
+  - rasterio>=1.0
+  - pathos
+  - xlrd
+  - natsort
+  - geopy
+  - boltons
+  - tqdm
+  - git
+  - git-lfs
+  - jupyterlab
+  - spyder
+  - rasterstats
+  - numba
+  - matplotlib
+  - descartes
+  - netcdf4
+  - seaborn
