@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Dec 12 14:32:51 2018
+Main functions of OSdaMage 1.0.
 
-@author: Elco Koks
-Edited by Kees jan 2019
+Contains the main functionality of the OSdaMage model. The functions are called from a Jupyter Notebook 'Main_multi.ipynb', 
+starting from the function region_loss_estimation.
+
+This code is maintained on a GitHub repository: github.com/keesvanginkel/OSdaMage
+
+@author: Kees van Ginkel and Elco Koks
 """
 
 
@@ -25,14 +29,8 @@ import sys
 from shapely.geometry import mapping
 import time as time
 from tqdm import tqdm
+
 from utils_functions import load_config,line_length
-
-#import warnings
-#warnings.simplefilter(action='ignore', category=FutureWarning)
-#pd.options.mode.chained_assignment = None
-
-#sys.path.append(os.path.join( '..'))
-
 
 def default_factory():
     return 'none'
@@ -411,28 +409,6 @@ def import_flood_curves(filename,sheet_name,usecols):
 
 
 #SECOND PART OF THE REPLACEMENT OF loss_estimations_flooding
-def road_loss_estimation_very_old(x,interpolators,events,max_damages,name_max_damages):
-    """
-    Carries out the damage estimation for a road segment using various damage curves
-    
-    Arguments:
-        *x* (Geopandas Series) -- a row from the region GeoDataFrame with all road segment
-        *interpolators* (OrderedDict) -- interpolation functions stored in a dict; created using import_flood_curves
-        *events* (List of strings) -- containing the names of the events: e.g. rp10 
-            scripts expects that x has the columns length_{events} and val_{events} which it needs to do the computation
-        *max_damage* (dictionary) -- dictionary containing the max_damages per road-type
-        *name_max_damages* (string) -- name of the max_damage dictionary; to save as column names in the output pandas DataFrame
-    
-    """
-    for event in events:
-        depth = x["val_{}".format(event)] #average water depth in cm
-        length = x["length_{}".format(event)] #inundated length in km
-        max_damage = max_damages[x["road_type"]] #get the right max_damage based on the infra_type
-        lst = [None]* len(interpolators) #create empty list, which will later be coverted to a tuple
-        for index, key in enumerate(interpolators): #loop over all different damage functions
-            lst[index] = round(interpolators[key](depth)*max_damage*length,2) #calculate damage using interpolator and round to eurocents
-        x["{}_dam_{}".format(name_max_damages,event)]=tuple(lst) #save results as a new column to series x
-    return x
 
 def road_loss_estimation(x,interpolator,events,max_damages,max_damages_HZ,curve_name,lane_damage_correction,**kwargs):
     """

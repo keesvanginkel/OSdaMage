@@ -10,10 +10,13 @@ The computational core of the model is derived from @ElcoK 's GMTRA model (https
  
 In the NHESS paper, the OSdaMage model is used to make a comprehensive comparison with grid-based model approaches on the continental (European) scale, using the CORINA and LUISA land cover classifications. This repository contains the code to reproduce the object-based part of the NHESS study, and does not include the grid-based part.
 
-The OSdaMage is meant to be combined with the flood hazard data of the Joint Research Centre, named 'EFAS rapid flood mapping', created with the 2d hydrodynamic model LISFLOOD-FP, or any comparable model.
+The OSdaMage model was combined with the flood hazard data of the Joint Research Centre; the flood hazard maps used in this work were calculated with the hydrodynamic model LISFLOOD-FP, while the hydrological input was calculated by the hydrological model LISFLOOD, see Alfieri et al. (2014).
 
 # Baseline model
 The core model attributes the baseline (no climate change) flood risk data to all road segments and Europe, and carries out a segment-wise damage calculation including an extensive uncertainty analysis.
+
+### Set Anaconda environment
+Install the conda environment as specified in the environment.yml file
 
 ### Required inputs baseline model
  - A planet file containing a recent 'Europe dump' of OpenStreetMap, downloadable from an OSM mirror, for example: http://download.openstreetmap.fr/ (linked checked on 15 July 2020)
@@ -33,8 +36,7 @@ Make sure the paths to these files are set correctly in the config.json file.
 \*\* Some pc's may have difficulties with some NUTS-3 regions with very complex geometries (notably NO053 and NO071), the shapes of which may be simplified with any GIS software to speed up the calculations
 \*\*\* For some NUTS-3 regions this data may be missing, missing values can be interpolated from neighboring regions or preceding years.
 
-### Step 1: preprocessing
-*TODO: CHECK AND LOOK THROUGH THIS CODE*
+### Step 1: preprocessing (code checked)
 
  -> Run run_core_model/Preproc_split_OSM.ipynb (calls multiple functions from postproc_functions.py)
  1.1 For each NUTS-3 region, a seperate .poly file is created (and simplified where necessary)
