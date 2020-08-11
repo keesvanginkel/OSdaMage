@@ -32,6 +32,160 @@ from tqdm import tqdm
 
 from utils_functions import load_config,line_length
 
+def region_loss_estimation(region, **kwargs):
+    """
+    Coordinates the loss estimation for the region.
+    
+    Arguments:
+
+        *region* (string) -- NUTS3 code of region to consider.
+    
+    Returns:
+
+        *csv file* (csv file) -- All inundated road segments in region, each row is segment, columns:
+            osm_id (integer) : OSM ID
+            infra_type (string) : equals OSM highway key
+            geometry (LINESTRING): road line geometry (simplified version of OSM shape)
+            lanes (integer): # lanes of road segment (from OSM or estimated based on median of country)
+            bridge (str): boolean indicating if it is a bridge or not
+            lit (str): boolean indicating if lighting is present
+            length (float): length of road segment in m
+            road_type (str): mapped road type (e.g. motorway, trunk, ... , track) for use by damage cal.
+            length_rp10 ... rp500 (float): length of the inundation section per hazard RP in m
+            val_rp10 ... rp500 (float): average depth over inundated section per hazard RP
+            NUTS-3 ... NUTS-0 (str): regional NUTS-ID of the segment
+            dam_CX...rpXX (tuple): containing (min, 25%, 50%, 75%, max) of damage estimate (Euros) for damage curve X 
+        
+        *pickle* -- contains pd.DataFrame similar to csv file: for fast loading
+    
+    """   
+    from postproc_functions import NUTS_down 
+
+    try:
+          
+        #LOAD DATA PATHS - configured in the config.json file
+        osm_path = load_config()['paths']['osm_data'] #this is where the osm-extracts are located
+        input_path = load_config()['paths']['input_data'] #this is where the other inputs (such as damage curves) are located     
+        hazard_path =  load_config()['paths']['hazard_data'] #this is where the inundation raster are located
+        output_path = load_config()['paths']['output'] #this is where the results are to be stored
+
+        #CREATE A LOG FILE OR TAKE THE FILE FOM THE KEYWORD ARGUMENTS
+        log_file = kwargs.get('log_file', None)
+        if log_file is None:
+            log_file = os.path.join(output_path,"region_loss_estimation_log_{}.txt".format(os.getenv('COMPUTERNAME')))
+
+        if log_file is not None: #write to log file
+            file = open(log_file, mode="a")
+            file.write("\n\nRunning region_loss_estimation for region: {} at time: {}\n".format(region,
+                                time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())))
+            file.close()
+
+        # SKIP IF REGION IS ALREADY FINISHED BY CHECKING IF OUTPUT FILE IS ALREADY CREATED
+        if os.path.exists(os.path.join(output_path,'{}.csv'.format(region))): 
+            print('{} already finished!'.format(region))
+            return None
+
+        # IMPORT FLOOD CURVES AND DAMAGE DATA
+        #Load the Excel file containing the OSM mapping and damage curves
+        map_dam_curves = load_config()['filenames']['map_dam_curves'] 
+        interpolators = import_flood_curves(filename = map_dam_curves, sheet_name='All_curves', usecols="B:O")
+        dict_max_damages = import_damage(map_dam_curves,"Max_damages",usecols="C:E")
+        max_damages_HZ = load_HZ_max_dam(map_dam_curves,"Huizinga_max_dam","A:G")
+
+        # LOAD NUTS REGIONS SHAPEFILE
+        NUTS_regions = gpd.read_file(os.path.join(input_path, load_config()['filenames']['NUTS3-shape']))
+
+        # EXTRACT ROADS FROM OSM FOR THE REGION
+        road_gdf = fetch_roads(osm_path,region,log_file=os.path.join(output_path,'fetch_roads_log_{}.txt'.format(os.getenv('COMPUTERNAME'))))
+        
+        # CLEANUP THE ROAD EXTRACTION
+        road_gdf = cleanup_fetch_roads(road_gdf, region)
+
+        # CALCULATE LINE LENGTH, SIMPLIFY GEOMETRY, MAP ROADS BASED ON EXCEL CLASSIFICATION
+        road_gdf['length'] = road_gdf.geometry.apply(line_length)
+        road_gdf.geometry = road_gdf.geometry.simplify(tolerance=0.00005) #about 0.001 = 100 m; 0.00001 = 1 m
+        road_dict = map_roads(map_dam_curves,'Mapping')
+        road_gdf['road_type'] = road_gdf.infra_type.apply(lambda x: road_dict[x]) #add a new column 'road_type' with less categories
+        
+        # GET GEOMETRY OUTLINE OF REGION
+        geometry = NUTS_regions['geometry'].loc[NUTS_regions.NUTS_ID == region].values[0]
+               
+        # CREATE DATAFRAME WITH VECTORIZED HAZARD DATA FROM INPUT TIFFS
+        hzd_path = os.path.join(hazard_path) 
+        hzd_list = natsorted([os.path.join(hzd_path, x) for x in os.listdir(hzd_path) if x.endswith(".tif")])
+        hzd_names = ['rp10','rp20','rp50','rp100','rp200','rp500']
+        
+        hzds_data = create_hzd_df(geometry,hzd_list,hzd_names) #both the geometry and the hzd maps are still in EPSG3035
+        hzds_data = hzds_data.to_crs({'init': 'epsg:4326'}) #convert to WGS84=EPSG4326 of OSM.
+        
+        # PERFORM INTERSECTION BETWEEN ROAD SEGMENTS AND HAZARD MAPS
+        for iter_,hzd_name in enumerate(hzd_names):
+            
+            try:
+                hzd_region = hzds_data.loc[hzds_data.hazard == hzd_name]
+                hzd_region.reset_index(inplace=True,drop=True)
+            except:
+                hzd_region == pd.DataFrame(columns=['hazard'])
+            
+            if len(hzd_region) == 0:
+                road_gdf['length_{}'.format(hzd_name)] = 0
+                road_gdf['val_{}'.format(hzd_name)] = 0
+                continue
+            
+            hzd_reg_sindex = hzd_region.sindex
+            tqdm.pandas(desc=hzd_name+'_'+region) 
+            inb = road_gdf.progress_apply(lambda x: intersect_hazard(x,hzd_reg_sindex,hzd_region),axis=1).copy()
+            inb = inb.apply(pd.Series)
+            inb.columns = ['geometry','val_{}'.format(hzd_name)]
+            inb['length_{}'.format(hzd_name)] = inb.geometry.apply(line_length)
+            road_gdf[['length_{}'.format(hzd_name),'val_{}'.format(hzd_name)]] = inb[['length_{}'.format(hzd_name),
+                                                                                      'val_{}'.format(hzd_name)]] 
+        # ADD SOME CHARACTERISTICS OF THE REGION AS COLUMNS TO OUTPUT DATAFRAME
+        df = road_gdf.copy()
+        df['NUTS-3'] = region
+        df['NUTS-2'] = NUTS_down(region)
+        df['NUTS-1'] = NUTS_down(NUTS_down(region))
+        df['NUTS-0'] = NUTS_down(NUTS_down(NUTS_down(region)))
+        
+        # ADD THE MISSING LANE DATA
+        lane_file = load_config()['filenames']['default_lanes'] #import the pickle containing the default lane data
+        with open(os.path.join(input_path,lane_file), 'rb') as handle:
+            default_lanes_dict = pickle.load(handle)
+        df = df.apply(lambda x: add_default_lanes(x,default_lanes_dict),axis=1).copy() #apply the add_default_lanes function
+        
+        # LOAD THE DICT REQUIRED FOR CORRECTING THE MAXIMUM DAMAGE BASED ON THE NUMBER OF LANES
+        lane_damage_correction = load_lane_damage_correction(map_dam_curves,"Max_damages","G:M") 
+        #actual correction is done within the road_loss_estimation function
+        
+        # PERFORM LOSS CALCULATION FOR ALL ROAD SEGMENTS
+        val_cols = [x for x in list(df.columns) if 'val' in x]
+        df = df.loc[~(df[val_cols] == 0).all(axis=1)] #Remove all rows from the dataframe containing roads that don't intersect with floods
+        
+        tqdm.pandas(desc = region)
+        
+        for curve_name in interpolators:
+            interpolator = interpolators[curve_name] #select the right interpolator
+            df = df.progress_apply(lambda x: road_loss_estimation(x,interpolator,hzd_names,dict_max_damages,max_damages_HZ,curve_name,
+                                                                  lane_damage_correction,log_file=os.path.join(output_path,'road_loss_estimation_log_{}.txt'.format(os.getenv('COMPUTERNAME')))),axis=1)           
+        
+        # SAVE AS CSV AND AS PICKLE
+        df.reset_index(inplace=True,drop=True)
+        df.to_csv(os.path.join(output_path ,'{}.csv'.format(region)))
+        df.to_pickle(os.path.join(output_path ,'{}.pkl'.format(region)))
+        
+        if log_file is not None: #write to log file
+            file = open(log_file, mode="a")
+            file.write("\n\nLoss calculation finished for region: {} at time: {}\n".format(region,time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())))
+            file.close()
+        
+    except Exception as e:
+        print('Failed to finish {} because of {}!'.format(region,e))
+        if log_file is not None: #write to log file
+            file = open(log_file, mode="a")
+            file.write("\n\nFailed to finish {} because of: {}\n".format(region,e))
+            file.close()
+
+
 def default_factory():
     return 'none'
 
@@ -507,154 +661,3 @@ def add_default_lanes(x,default_lanes_dict):
         x.lanes = default_lanes_dict[x['NUTS-0']][x['road_type']]
     return x
 
-def region_loss_estimation(region, **kwargs):
-    """
-    Coordinates the loss estimation for the region.
-    
-    Arguments:
-
-        *region* (string) -- NUTS3 code of region to consider.
-    
-    Returns:
-
-        *csv file* (csv file) -- All inundated road segments in region, each row is segment, columns:
-            osm_id (integer) : OSM ID
-            infra_type (string) : equals OSM highway key
-            geometry (LINESTRING): road line geometry (simplified version of OSM shape)
-            lanes (integer): # lanes of road segment (from OSM or estimated based on median of country)
-            bridge (str): boolean indicating if it is a bridge or not
-            lit (str): boolean indicating if lighting is present
-            length (float): length of road segment in m
-            road_type (str): mapped road type (e.g. motorway, trunk, ... , track) for use by damage cal.
-            length_rp10 ... rp500 (float): length of the inundation section per hazard RP in m
-            val_rp10 ... rp500 (float): average depth over inundated section per hazard RP
-            NUTS-3 ... NUTS-0 (str): regional NUTS-ID of the segment
-            dam_CX...rpXX (tuple): containing (min, 25%, 50%, 75%, max) of damage estimate (Euros) for damage curve X 
-        
-        *pickle* -- contains pd.DataFrame similar to csv file: for fast loading
-    
-    """   
-    from postproc_functions import NUTS_down 
-
-    try:
-          
-        #LOAD DATA PATHS - configured in the config.json file
-        osm_path = load_config()['paths']['osm_data'] #this is where the osm-extracts are located
-        input_path = load_config()['paths']['input_data'] #this is where the other inputs (such as damage curves) are located     
-        hazard_path =  load_config()['paths']['hazard_data'] #this is where the inundation raster are located
-        output_path = load_config()['paths']['output'] #this is where the results are to be stored
-
-        #CREATE A LOG FILE OR TAKE THE FILE FOM THE KEYWORD ARGUMENTS
-        log_file = kwargs.get('log_file', None)
-        if log_file is None:
-            log_file = os.path.join(output_path,"region_loss_estimation_log_{}.txt".format(os.getenv('COMPUTERNAME')))
-
-        if log_file is not None: #write to log file
-            file = open(log_file, mode="a")
-            file.write("\n\nRunning region_loss_estimation for region: {} at time: {}\n".format(region,
-                                time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())))
-            file.close()
-
-        # SKIP IF REGION IS ALREADY FINISHED BY CHECKING IF OUTPUT FILE IS ALREADY CREATED
-        if os.path.exists(os.path.join(output_path,'{}.csv'.format(region))): 
-            print('{} already finished!'.format(region))
-            return None
-
-        # IMPORT FLOOD CURVES AND DAMAGE DATA
-        map_dam_curves = load_config()['filenames']['map_dam_curves']
-        interpolators = import_flood_curves(filename = map_dam_curves, sheet_name='All_curves', usecols="B:O")
-        dict_max_damages = import_damage(map_dam_curves,"Max_damages",usecols="C:E")
-        max_damages_HZ = load_HZ_max_dam(map_dam_curves,"Huizinga_max_dam","A:G")
-
-        # LOAD NUTS REGIONS SHAPEFILE
-        NUTS_regions = gpd.read_file(os.path.join(input_path, load_config()['filenames']['NUTS3-shape']))
-
-        # EXTRACT ROADS FROM OSM FOR THE REGION
-        road_gdf = fetch_roads(osm_path,region,log_file=os.path.join(output_path,'fetch_roads_log_{}.txt'.format(os.getenv('COMPUTERNAME'))))
-        
-        # CLEANUP THE ROAD EXTRACTION
-        road_gdf = cleanup_fetch_roads(road_gdf, region)
-
-        # CALCULATE LINE LENGTH, SIMPLIFY GEOMETRY, MAP ROADS BASED ON EXCEL CLASSIFICATION
-        road_gdf['length'] = road_gdf.geometry.apply(line_length)
-        road_gdf.geometry = road_gdf.geometry.simplify(tolerance=0.00005) #about 0.001 = 100 m; 0.00001 = 1 m
-        road_dict = map_roads(map_dam_curves,'Mapping')
-        road_gdf['road_type'] = road_gdf.infra_type.apply(lambda x: road_dict[x]) #add a new column 'road_type' with less categories
-        
-        # GET GEOMETRY OUTLINE OF REGION
-        geometry = NUTS_regions['geometry'].loc[NUTS_regions.NUTS_ID == region].values[0]
-               
-        # CREATE DATAFRAME WITH VECTORIZED HAZARD DATA FROM INPUT TIFFS
-        hzd_path = os.path.join(hazard_path) 
-        hzd_list = natsorted([os.path.join(hzd_path, x) for x in os.listdir(hzd_path) if x.endswith(".tif")])
-        hzd_names = ['rp10','rp20','rp50','rp100','rp200','rp500']
-        
-        hzds_data = create_hzd_df(geometry,hzd_list,hzd_names) #both the geometry and the hzd maps are still in EPSG3035
-        hzds_data = hzds_data.to_crs({'init': 'epsg:4326'}) #convert to WGS84=EPSG4326 of OSM.
-        
-        # PERFORM INTERSECTION BETWEEN ROAD SEGMENTS AND HAZARD MAPS
-        for iter_,hzd_name in enumerate(hzd_names):
-            
-            try:
-                hzd_region = hzds_data.loc[hzds_data.hazard == hzd_name]
-                hzd_region.reset_index(inplace=True,drop=True)
-            except:
-                hzd_region == pd.DataFrame(columns=['hazard'])
-            
-            if len(hzd_region) == 0:
-                road_gdf['length_{}'.format(hzd_name)] = 0
-                road_gdf['val_{}'.format(hzd_name)] = 0
-                continue
-            
-            hzd_reg_sindex = hzd_region.sindex
-            tqdm.pandas(desc=hzd_name+'_'+region) 
-            inb = road_gdf.progress_apply(lambda x: intersect_hazard(x,hzd_reg_sindex,hzd_region),axis=1).copy()
-            inb = inb.apply(pd.Series)
-            inb.columns = ['geometry','val_{}'.format(hzd_name)]
-            inb['length_{}'.format(hzd_name)] = inb.geometry.apply(line_length)
-            road_gdf[['length_{}'.format(hzd_name),'val_{}'.format(hzd_name)]] = inb[['length_{}'.format(hzd_name),
-                                                                                      'val_{}'.format(hzd_name)]] 
-        # ADD SOME CHARACTERISTICS OF THE REGION AS COLUMNS TO OUTPUT DATAFRAME
-        df = road_gdf.copy()
-        df['NUTS-3'] = region
-        df['NUTS-2'] = NUTS_down(region)
-        df['NUTS-1'] = NUTS_down(NUTS_down(region))
-        df['NUTS-0'] = NUTS_down(NUTS_down(NUTS_down(region)))
-        
-        # ADD THE MISSING LANE DATA
-        lane_file = load_config()['filenames']['default_lanes'] #import the pickle containing the default lane data
-        with open(os.path.join(input_path,lane_file), 'rb') as handle:
-            default_lanes_dict = pickle.load(handle)
-        df = df.apply(lambda x: add_default_lanes(x,default_lanes_dict),axis=1).copy() #apply the add_default_lanes function
-        
-        # LOAD THE DICT REQUIRED FOR CORRECTING THE MAXIMUM DAMAGE BASED ON THE NUMBER OF LANES
-        lane_damage_correction = load_lane_damage_correction(map_dam_curves,"Max_damages","G:M") 
-        #actual correction is done within the road_loss_estimation function
-        
-        # PERFORM LOSS CALCULATION FOR ALL ROAD SEGMENTS
-        val_cols = [x for x in list(df.columns) if 'val' in x]
-        df = df.loc[~(df[val_cols] == 0).all(axis=1)] #Remove all rows from the dataframe containing roads that don't intersect with floods
-        
-        tqdm.pandas(desc = region)
-        
-        for curve_name in interpolators:
-            interpolator = interpolators[curve_name] #select the right interpolator
-            df = df.progress_apply(lambda x: road_loss_estimation(x,interpolator,hzd_names,dict_max_damages,max_damages_HZ,curve_name,
-                                                                  lane_damage_correction,log_file=os.path.join(output_path,'road_loss_estimation_log_{}.txt'.format(os.getenv('COMPUTERNAME')))),axis=1)           
-        
-        # SAVE AS CSV AND AS PICKLE
-        df.reset_index(inplace=True,drop=True)
-        df.to_csv(os.path.join(output_path ,'{}.csv'.format(region)))
-        df.to_pickle(os.path.join(output_path ,'{}.pkl'.format(region)))
-        
-        if log_file is not None: #write to log file
-            file = open(log_file, mode="a")
-            file.write("\n\nLoss calculation finished for region: {} at time: {}\n".format(region,time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())))
-            file.close()
-        
-    except Exception as e:
-        print('Failed to finish {} because of {}!'.format(region,e))
-        if log_file is not None: #write to log file
-            file = open(log_file, mode="a")
-            file.write("\n\nFailed to finish {} because of: {}\n".format(region,e))
-            file.close()

@@ -36,15 +36,29 @@ Make sure the paths to these files are set correctly in the config.json file.
 \*\* Some pc's may have difficulties with some NUTS-3 regions with very complex geometries (notably NO053 and NO071), the shapes of which may be simplified with any GIS software to speed up the calculations
 \*\*\* For some NUTS-3 regions this data may be missing, missing values can be interpolated from neighboring regions or preceding years.
 
-### Step 1: preprocessing (code checked)
+### Step 1: preprocessing 
 
- -> Run run_core_model/Preproc_split_OSM.ipynb (calls multiple functions from postproc_functions.py)
- 1.1 For each NUTS-3 region, a seperate .poly file is created (and simplified where necessary)
- 1.2 For each NUTS-3 region, an OSM extract is made with the help of the poly file, containing all the OSM data in this NUTS-3 region
+ -> Run *run_core_model/Preproc_split_OSM.ipynb* (calls multiple functions from postproc_functions.py)
+ 1.1. For each NUTS-3 region, a seperate .poly file is created (and simplified where necessary)
+ 1.2. For each NUTS-3 region, an OSM extract is made with the help of the poly file, containing all the OSM data in this NUTS-3 region
 
 ### Step 2: main model
- -> Run run_core_model/Main_multi.ipynb (calls multiple functions from main_functions.py)
- *Todo: describe the step of the main model*
+The main computations are carried out using parallel processing, coordinated in the notebook:
+ -> Run *run_core_model/Main_multi.ipynb* (calls multiple functions from *main_functions.py*)
+This notebook calls for each NUTS-3 region the function *region_loss_estimation*
+
+*region_loss_estimation* carries out the loss calculation for one NUTS-3 region, as follows:
+  1.1. It calls *fetch_roads* which fetches the road network from the .osm.pbf extract of the region
+  1.2. It calls *cleanup_fetch_roads* which polishes the road fetch from the .osm.pbf (corrects erratic clipping of NUTS-3 regions completely surrounded by other NUTS-3 regions and cuts roads that extent over the boundary of the NUTS-3 region)\
+  1.3. It simplifies road geometries to 0.00005 degree, which is less than 5 m for Europe
+  1.4. It simplifies the 'infra_type' attribute by mapping it to 7 main 'road_type' categories (motorways, trunks, primary roads, secondary roads, tertiary roads, other roads, tracks). Mapping settings are defined in *input_data/Mapping_maxdamage_curves.xlsx*
+  1.5. It masks and vectorizes the six flood rasters using *create_hz_df*
+  1.6. It iterates over all the roads using *intersect_hazard* and adds the the following data to each road segment: total segment length, inundated segment length, average water depth over the inundated part
+  1.7. For any segment without lane data, the mode (most frequently occuring number of lanes for that road type in that country) is assigned
+  1.8. It iterates over all the roads and all damage curves using *road_loss_estimation* and carries out the damage calculation [a]
+ 
+ [a] *road_loss_estimation* calculates for each road segment, the damage for each combination of inundation raster (6 return periods: RP10, RP20, RP50, RP100, RP200, RP500) and damage curve (7 curves Curve C1-C7): i.e. 42 damages for each road segment. These are added as columns in the GeoPandasDataFrame with road segments. However, rather than calculating one single value for each combination, it also accounts for uncertainty in the max damage estimates. This is done by calculating the minimum, maximum and 3 linearly scaled in-between max damage estimates. As a result, each road segment has 42 damage tuples containg the (min, 25%, 50%, 75%, max) damage estimates.
+ 
  
 ### Step 3: postprocessing
  -> Run run_core_model/Post_AoI_FP_multi.ipynb *TODO: include this step in the main model?*
