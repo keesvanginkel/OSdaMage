@@ -3,7 +3,7 @@
     "paths": {
         "osm_planetpath" : "D:\\Europe_trade_disruptions\\OSM_extracts\\europe.osm.pbf",
         "osm_polyfiles" : "D:\\Europe_trade_disruptions\\EuropeFloodResults\\Model10\\preproc\\poly_files",
-        "osm_data": "D:\\Python\\OSdaMage\\preproc_output\\osm_pbf_files",
+        "osm_data": "D:\\Europe_trade_disruptions\\OSM_extracts\\europe_regions_pbf_VM",
         "input_data" : "D:\\Python\\OSdaMage\\input_data",
 		"hazard_data" : "D:\\Europe_trade_disruptions\\JRC_riverflood_Europe\\floodMaps_Europe_2018_mergedshifted",
         "fpl_raster" : "D:\\Europe_trade_disruptions\\ProtSt_Jongman\\floodProtection_v2019_5km_nibbled_downscaled_100_100.tif",

@@ -152,6 +152,7 @@ def region_loss_estimation(region, **kwargs):
         with open(os.path.join(input_path,lane_file), 'rb') as handle:
             default_lanes_dict = pickle.load(handle)
         df = df.apply(lambda x: add_default_lanes(x,default_lanes_dict),axis=1).copy() #apply the add_default_lanes function
+        #This should also work with a default dict, because now seems to raise an exception also when it is an unused road type
         
         # LOAD THE DICT REQUIRED FOR CORRECTING THE MAXIMUM DAMAGE BASED ON THE NUMBER OF LANES
         lane_damage_correction = load_lane_damage_correction(map_dam_curves,"Max_damages","G:M") 
@@ -198,7 +199,7 @@ def map_roads(filename,sheet_name):
         *sheet_name* (string) - name of the Excel sheetname containing the data
     
     Returns:
-        *road_mapping* (Default dictionary) - Default dictionary containing OSM 'highway' variables as keys and the aggregated group names as values
+        *road_mapping* (Default dictionary) - Default dictionary containing OSM 'highway' variables as keys and the aggregated group names as values, will return 'none when an uknown key is entered'
     """
     input_path = load_config()['paths']['input_data'] #folder containing the Excel_file
     mapping = pd.read_excel(os.path.join(input_path,filename),
