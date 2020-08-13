@@ -20,31 +20,30 @@ Install the conda environment as specified in the environment.yml file
 
 ### Required inputs baseline model
  - A planet file containing a recent 'Europe dump' of OpenStreetMap, downloadable from an OSM mirror, for example: http://download.openstreetmap.fr/ (linked checked on 15 July 2020)
- - River flood data from the EFAS model: *ask Francesco*
- - A raster with flood protection data \*: for example *ask Francesco*
+ - River flood risk and flood protection data from the PESETA IV project. These will be made publicly available in upcoming publications. In the meantime, the data can be obtained upon reasonable request from Francesco Dottori (francesco.dottori@ec.europa.eu) and Luc Feyen (luc.feyen@ec.europa.eu)
  - Shapefiles of the European NUTS-2016 classification (https://ec.europa.eu/eurostat/web/gisco/geodata/reference-data/administrative-units-statistical-units/nuts)
- - Eurostat real GDP per capita per NUTS0 country, and Eurostat GDP per NUTS3-region \*\*\*
+ - Eurostat real GDP per capita per NUTS0 country, and Eurostat GDP per NUTS3-region (https://ec.europa.eu/eurostat/data/database)
  - The OSMconvert executable, downloadable from https://wiki.openstreetmap.org/wiki/Osmconvert, by default OSdaMage expects a file called: 'osmconvert64.exe'
  - Two pickled files containing some summary statistics derived from OSM
-      - default_lanes_temp.pkl - with the median number of lanes per country (to complement any missing road segment attributes *Todo: replace by csv?*
-      - NUTS3-names.pkl - containing a list of all the NUTS-3 names *TODO: just get this from the shapefile*
+      - default_lanes_temp.pkl - with the median number of lanes per country (to complement any missing road segment attributes 
+      - NUTS3-names.pkl - containing a list of all the NUTS-3 names
  - All information on the damage curves, stored in an Excel sheet named 'Mapping_maxdamage_curves4.xlsx'
 
 Make sure the paths to these files are set correctly in the config.json file.
 
-\* Some preprocessing in GIS may be required to obtain a raster which aligns with the flood risk data.
-\*\* Some pc's may have difficulties with some NUTS-3 regions with very complex geometries (notably NO053 and NO071), the shapes of which may be simplified with any GIS software to speed up the calculations
-\*\*\* For some NUTS-3 regions this data may be missing, missing values can be interpolated from neighboring regions or preceding years.
+\* Some preprocessing in GIS may be required to obtain a raster which aligns with the flood risk data.  
+\*\* Some pc's may have difficulties with some NUTS-3 regions with very complex geometries (notably NO053 and NO071), the shapes of which may be simplified with any GIS software to speed up the calculations  
+\*\*\* For some NUTS-3 regions this data may be missing, missing values can be interpolated from neighboring regions or preceding years.  
 
 ### Step 1: preprocessing 
 
- -> Run *run_core_model/Preproc_split_OSM.ipynb* (calls multiple functions from postproc_functions.py)
+ -> Run **run_core_model/1_Preproc_split_OSM.ipynb** (calls multiple functions from postproc_functions.py)
  1. For each NUTS-3 region, a seperate .poly file is created (and simplified where necessary)
  1. For each NUTS-3 region, an OSM extract is made with the help of the poly file, containing all the OSM data in this NUTS-3 region
 
 ### Step 2: main model
 The main computations are carried out using parallel processing, coordinated in the notebook:
- -> Run *run_core_model/Main_multi.ipynb* (calls multiple functions from *main_functions.py*)
+ -> Run **run_core_model/2_Main_multi.ipynb** (calls multiple functions from *main_functions.py*)
 This notebook calls for each NUTS-3 region the function *region_loss_estimation*
 
 *region_loss_estimation* carries out the loss calculation for one NUTS-3 region, as follows:
@@ -60,21 +59,20 @@ This notebook calls for each NUTS-3 region the function *region_loss_estimation*
  [a] *road_loss_estimation* calculates for each road segment, the damage for each combination of inundation raster (6 return periods: RP10, RP20, RP50, RP100, RP200, RP500) and damage curve (7 curves Curve C1-C7): i.e. 42 damages for each road segment. These are added as columns in the GeoPandasDataFrame with road segments. However, rather than calculating one single value for each combination, it also accounts for uncertainty in the max damage estimates. This is done by calculating the minimum, maximum and 3 linearly scaled in-between max damage estimates. As a result, each road segment has 42 damage tuples containg the (min, 25%, 50%, 75%, max) damage estimates.
  
  
-### Step 3: postprocessing
- -> Run run_core_model/Post_AoI_FP_multi.ipynb *TODO: include this step in the main model?*
- 3.1 This add the AoI (used for climate change analysis) and the Flood Protection data to the model
+### Step 3 and 4: postprocessing
+ -> Run **run_core_model/3_Post_AoI_FP_multi.ipynb**
+This adds the Flood Protection data to the road segments \* 
  
- -> Run run_core_model/Post_Baseline_multi.ipynb
- 3.2 This carries out the actual risk calculation
+ -> Run **run_core_model/4_Post_Baseline_multi.ipynb**
+Carries out the actual risk calculation
 
+\* Also has code to add an 'AoI' per road segment. The AoI is an identifier to link flood data to the hydrological model (used for climate change analysis)
 
-For the climate change module:
- - GDP per capita in different SSPs
- - Climate change data 
- - Area of influence data
+### Step 5: visualising the results
+The folder **result_visualisations** contains the Notebooks to produce the figure in the article and SI.
 
 ### References
-van Ginkel, K. C. H., Dottori, F., Alfieri, L., Feyen, L., and Koks, E. E.: Direct flood risk assessment of the European road network: an object-based approach, Nat. Hazards Earth Syst. Sci. Discuss., https://doi.org/10.5194/nhess-2020-104, in review, 2020
-Koks, E. E., Rozenberg, J., Zorn, C., Tariverdi, M., Vousdoukas, M., Fraser, S. A., Hall, J. W., & Hallegatte, S. (2019). A global multi-hazard risk analysis of road and railway infrastructure assets. Nature Communications, 10(1), 1–11. https://doi.org/10.1038/s41467-019-10442-3
+van Ginkel, K. C. H., Dottori, F., Alfieri, L., Feyen, L., and Koks, E. E.: Direct flood risk assessment of the European road network: an object-based approach, Nat. Hazards Earth Syst. Sci. Discuss., https://doi.org/10.5194/nhess-2020-104, in review, 2020  
+Koks, E. E., Rozenberg, J., Zorn, C., Tariverdi, M., Vousdoukas, M., Fraser, S. A., Hall, J. W., & Hallegatte, S. (2019). A global multi-hazard risk analysis of road and railway infrastructure assets. Nature Communications, 10(1), 1–11. https://doi.org/10.1038/s41467-019-10442-3  
 European Commission, Joint Research Centre (2017):  EFAS rapid flood mapping. European Commission, Joint Research Centre (JRC) [Dataset] PID: http://data.europa.eu/89h/85470f72-9406-4a91-9f1f-2a0220a5fa86
 
