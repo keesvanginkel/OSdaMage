@@ -25,154 +25,74 @@ from utils_functions import load_config
 GENERAL FUNCTIONS
 """
 
-#CORE MODEL? YES - BUT CURRENTLY UNUSED BECAUSE WE USUALLY KNOW THE FPL
-def risk(dam,RPs):
+def AoI_FP(region):
     """
-    Calculates the flood risk from damage estimates and corresponding return periods by trapezoidal integration
+    Determines for each OSM road segment, the flood protection level according to Jongman (AoI functionality commented out)
     
     Arguments:
-        *dam* (list) - damage estimates (e.g. Euro's) - from high to low RPs
-        *RPs* (list) - the return periods (in years) of the events corresponding to these damage estimates - from high to low RPs (order of both lists should match!) 
-    
-    Returns:
-        *risk* (float) - the estimated flood risk in Euro/y
-    
-    Note that this calculation is not trivial and contains important assumptions about the risk calculation:
-     - Damage for RPs higher than the largest RP equals the damage of the largest RP
-     - Damage for RPs lower than the smallest RP is 0.
-     - Damage of events in between known RPs are interpolated linearly with RP.
-    """
-    if not sorted(RPs, reverse=True) == RPs:
-        raise ValueError('RPs is not provided in the right format. Should be a descending list of RPs, e.g. [500,100,10]')
-    
-    dam.insert(0,dam[0]) #add the maximum damage to the list again (for the 1:inf event)
-    Rfs = [1 / RP for RP in RPs] #calculate the return frequencies (probabilities) of the damage estimates
-    Rfs.insert(0,0) #add the probability of the 1:inf event
-    return np.trapz(y=dam,x=Rfs)
-
-#CORE MODEL? YES BUT NOT EFFICIENT - CAN BE REPLACED BY VECTORIZED FUNCTION USED IN THE CLIMATE CHANGE MODULE
-def risk_FP(dam,RPs,PL):
-    """
-    Calculates the flood risk from damage estimates and corresponding return periods by trapezoidal integration, 
-    accounting for the flood protection in place. 
-    
-    Arguments:
-        *dam* (list) - damage estimates (e.g. Euro's) - from high to low RPs
-        *RPs* (list) - the return periods (in years) of the events corresponding to these damage estimates - from high to low RPs (order of both lists should match!) 
-        *PL* (integer) - the flood protection level in years
-    
-    Returns:
-        *risk* (float) - the estimated flood risk in Euro/y
-    
-    Note that this calculation is not trivial and contains important assumptions about the risk calculation:
-     - Damage for RPs higher than the largest RP equals the damage of the largest RP
-     - Damage for RPs lower than the smallest RP is 0.
-     - Damage of events in between known RPs are interpolated linearly with RP.
-    """
-    if not sorted(RPs, reverse=True) == RPs:
-        raise ValueError('RPs is not provided in the right format. Should be a descending list of RPs, e.g. [500,100,10]')
-    
-    if RPs[-1] < PL < RPs[0]: #if protection level is somewhere between the minimum and maximum available return period
-        pos = RPs.index(next(i for i in RPs if i < PL)) #find position of first RP value < PL; this is the point which need to be altered
-        dam = dam[0:pos+1] #remove all the values with smaller RPs than the PL
-        dam[pos] = np.interp(x=(1/PL),xp=[(1/RPs[pos-1]),(1/RPs[pos])],fp=[dam[pos-1],dam[pos]]) #interpolate the damage at the RP of the PL
-        #note that you should interpolate over the probabilities/frequences (therefore the 1/X), not over the RPs; this gives different results
-        RPs[pos] = PL #take the PL as the last RP...
-        RPs = RPs[0:pos+1] #... and remove all the other RPs
-
-    elif PL >= RPs[0]: #protection level is larger than the largest simulated event
-        return (1/PL) * dam[0] #damage is return frequence of PL times the damage of the most extreme event
-
-    #not necessary to check other condition (PL <= 10 year -> then just integrate over the available damages, don't assume additional damage)
-     
-    dam.insert(0,dam[0]) #add the maximum damage to the list again (for the 1:inf event)
-    Rfs = [1 / RP for RP in RPs] #calculate the return frequencies (probabilities) of the damage estimates
-    Rfs.insert(0,0) #add the probability of the 1:inf event
-    integral = np.trapz(y=dam,x=Rfs).round(2)
-    return integral
-
-#CORE MODEL? YES - BUT VERY SPECIFIC FOR THE SET OF DAMAGE CURVES USED IN THE EU-IMPLEMENTATION
-def EAD_asset(x,RPs,curves,positions):
-    """
-    Calculates the expected annual damage for one road segment (i.e. a row of the DataFrame containing the results)
-    based on the damage per return period and the flood protection level.
-    
-    
-    WARNING: THIS FUNCTION PROBABLY REALLY SLOWS DOWN THE OVERALL POST-PROCESSING SCRIPT (COMPARE ITS PERFORMANCE WITH
-    THE CLIMATE CHANGE SCRIPT) Most likely, the cause is the use of a loop and an if-statement for the manipulation; this is not
-    smart for a function that is applied on a DataFrame!!!
-    
-    Arguments:
-        *x* (Geopandas Series) - A row of the GeoPandas DataFrame containing all road segments, should have dam cols, rps, flood protection level 
-        *RPs* (List) - return periods of the damage data, in descending order e.g. [500,200,100,50,20,10]
-        *curves* (List) - short names of damage curves for which to calculate the EAD e.g. ["C1","C2","C3","C4","C5","C6","HZ"]
-        *positions* (List) - tuple positions of available max damage estimates e.g. [0,1,2,3,4]
-    
-    Returns:
-        *x* (Geopandas Series) - with added the new columns containing EADs
-    """
-    PL = x["Jongman_FP"]
-    RPs_copy = [y for y in RPs] #make a new list, or it will be altered in the function and mess up everything!!!
-    for curve in curves:
-        damcols = ["dam_{}_rp{}".format(curve,rp) for rp in RPs] #this was RPs; but somehow this did not work
-        EAD = [0,0,0,0,0] #initialize empty lists
-        for pos in positions: #iterate over all the max damage estimates
-            dam = list(x[damcols].apply(lambda y: pick_tuple(y,pos)).values) #creates a numpy array with the damage values of the desired max_dam
-            EAD[pos] = risk_FP(dam,RPs_copy,PL) 
-        if not curve == "HZ": #save results to the series, which will be returned as a row in the df
-            x["EAD_{}".format(curve)] = tuple(EAD)
-        else: 
-            x["EAD_HZ"] = EAD[0]
-    return x
-
-#CORE MODEL? YES
-def EAD_region_segmentwise(region):
-    """
-    Calculates Expected Annual Damages for one NUTS-3 region, with keeping all the individual road segments
-    (For example used to make maps)
-    
-    Arguments:
-        *region* (string) - the NUTS-3 name of the region
-    
-    Returns:
-        *mdf* (Geopandas DataFrame) - Merged DF containing the model results; the flood protection level and AOI; and the EAD calculated using these
+        *region* (string) -- name of the NUTS-3 region for which to do the analysis
         
-    Note that when using this function, the GDP-correction still has to be done, as well as bridge filtering and using lighting meta-data.    
-    
+    Returns:
+        *result_dict* (dictionary) -- key = region; value = keys: osm_id's; values: keys: Jongman FP; AoI per RP.
+        
+    Known issues: 
+        - If raster cells do have inundations but no flood protection level an error occurs, 
+          this can be avoid 'nibbling the flood protection Raster, e.g. with QGIS'
     """
-    #FIND PATHS CONTAINING MODEL RESULTS, FLOOD PROTECTION LEVELS AND AREA OF INFLUENCE
-    output_path = load_config()['paths']['output']
-    fpl_aoi_output = load_config()['paths']['fpl_aoi_output']
-    output_file = os.path.join(output_path,'{}.pkl'.format(region))
-    fpl_aoi_file = os.path.join(fpl_aoi_output,'{}_AoI_FP.pkl'.format(region))
-    
-    #CHECK IF PATHS EXIST:
-    if not os.path.exists(output_file):
-        raise FileNotFoundError("The file containing the model results: {} does not exist.".format(output_file))
-    if not os.path.exists(fpl_aoi_file):
-        raise FileNotFoundError("The file containing the flood protection level and area of influence: {} does not exist.".format(fpl_aoi_file))
-    
-    #READ REGION RESULTS DATAFRAME
-    df = pd.read_pickle(output_file)
-    df = df.set_index('osm_id') #use the osm_id column as an index
-    
-    #READ FLOOD PROTECTION AND AREA OF INFLUENCE DATAFRAME
-    fpl_aoi = pd.read_pickle(fpl_aoi_file)
-    
-    #MERGE BOTH DATAFRAMES
-    mdf = pd.merge(df,fpl_aoi,how='outer',on='osm_id') #merged dataframe
-    mdf.drop(labels='NUTS-3_y',inplace=True,axis=1) #double because of the merge
-    mdf.rename({'NUTS-3_x':'NUTS-3'},inplace=True,axis=1) #and change the name back
-    
-    #DO THE RISK CALCULATION
-    RPs = [500,200,100,50,20,10]
-    curves = ["C1","C2","C3","C4","C5","C6","HZ"]
-    positions = [0,1,2,3,4]
-    tqdm.pandas(desc="EAD_{}".format(region))
-    mdf = mdf.progress_apply(lambda x: EAD_asset(x,RPs,curves,positions), axis=1)
+    fpl_aoi_output = load_config()['paths']['fpl_aoi_output'] #loaded first, because it is used for exception logging
+    try: 
+        #load paths
+        input_path = load_config()['paths']['input_data']
+        output_path = load_config()['paths']['output']
+        #AoI_path = load_config()['paths']['aoi_data']
+        FP_name = load_config()['paths']['fpl_raster']      
+        #load filenames
+        NUTS3_shape = load_config()['filenames']['NUTS3-shape']
 
-    return mdf
+        #check if path exists
+        if os.path.exists(os.path.join(fpl_aoi_output,"{}_AoI_FP.pkl".format(region))): 
+            print('{} already finished!'.format(region))
+            return None
 
+        df = pd.read_pickle(os.path.join(output_path,"{}.pkl".format(region))) #open the df
+        df = df.loc[df['osm_id'] != (0,0,0,0,0)] #remove erratic rows
+        df.crs = {'init' :'epsg:4326'}
+        df = df.to_crs(epsg=3035) #change to same projection as the raster data
+        
+        NUTS_regions = gpd.read_file(os.path.join(input_path,NUTS3_shape))
+        geometry = NUTS_regions['geometry'].loc[NUTS_regions.NUTS_ID == region].values[0] #The NUTS-3 shape
+        geoms = [mapping(geometry)] #Convert to GeoJson file
+        
+        #AoI_list = natsorted([os.path.join(AoI_path, x) for x in os.listdir(AoI_path) if x.endswith(".tif")]) #examine whole folder, select tifs, sort
+        #AoI_names = ['rp10','rp20','rp50','rp100','rp200','rp500']
+
+        tqdm.pandas(desc=region)
+
+        ### ATTRIBUTE THE AOI DATA ###
+        #for i, raster_path in enumerate(AoI_list): #iterate over all AoI rasters
+        #    df['AoI_{}'.format(AoI_names[i])] = df.geometry.progress_apply(lambda x: zonal_stats(x, raster_path,stats=['majority'],nodata=0,all_touched=True)[0]['majority'])
+
+        ### ATTRIUBTE THE FLOOD PROTECTION DATA ###
+        df['Jongman_FP'] = df.geometry.apply(lambda x: zonal_stats(x, FP_name, stats=['majority'],nodata=0,all_touched=True)[0]['majority'])
+
+        #cols = ["osm_id","NUTS-3","Jongman_FP","AoI_rp10","AoI_rp20","AoI_rp50","AoI_rp100","AoI_rp200","AoI_rp500"]
+        cols = ["osm_id","NUTS-3","Jongman_FP"]
+        df_sel = df[cols]
+        df_sel = df_sel.set_index('osm_id')
+        df_sel.to_pickle(os.path.join(fpl_aoi_output,"{}_AoI_FP.pkl".format(region)))
+
+        result_dict = {region : df_sel.to_dict(orient='index')}
+        print("{} finished!".format(region))
+        return(result_dict)
+    
+    except Exception as e:
+        log_mess = 'Failed to finish {} because of {}!'.format(region,e)
+        print(log_mess)
+        log_file = os.path.join(fpl_aoi_output,'AoI_FP_log_{}.txt'.format(os.getenv('COMPUTERNAME')))
+        file = open(log_file, mode="a")
+        file.write(log_mess)
+        file.close()
+        
 def EAD_multi(region):
     """
     Calculates the EAD aggregated per road_type using the lighting-mix, saves intermediate results
@@ -259,6 +179,130 @@ def EAD_multi(region):
 
     return None
 
+def EAD_region_segmentwise(region):
+    """
+    Calculates Expected Annual Damages for one NUTS-3 region, with keeping all the individual road segments
+    (For example used to make maps)
+    
+    Arguments:
+        *region* (string) - the NUTS-3 name of the region
+    
+    Returns:
+        *mdf* (Geopandas DataFrame) - Merged DF containing the model results; the flood protection level and AOI; and the EAD calculated using these
+        
+    Note that when using this function, the GDP-correction still has to be done, as well as bridge filtering and using lighting meta-data.    
+    
+    """
+    #FIND PATHS CONTAINING MODEL RESULTS, FLOOD PROTECTION LEVELS AND AREA OF INFLUENCE
+    output_path = load_config()['paths']['output']
+    fpl_aoi_output = load_config()['paths']['fpl_aoi_output']
+    output_file = os.path.join(output_path,'{}.pkl'.format(region))
+    fpl_aoi_file = os.path.join(fpl_aoi_output,'{}_AoI_FP.pkl'.format(region))
+    
+    #CHECK IF PATHS EXIST:
+    if not os.path.exists(output_file):
+        raise FileNotFoundError("The file containing the model results: {} does not exist.".format(output_file))
+    if not os.path.exists(fpl_aoi_file):
+        raise FileNotFoundError("The file containing the flood protection level and area of influence: {} does not exist.".format(fpl_aoi_file))
+    
+    #READ REGION RESULTS DATAFRAME
+    df = pd.read_pickle(output_file)
+    df = df.set_index('osm_id') #use the osm_id column as an index
+    
+    #READ FLOOD PROTECTION AND AREA OF INFLUENCE DATAFRAME
+    fpl_aoi = pd.read_pickle(fpl_aoi_file)
+    
+    #MERGE BOTH DATAFRAMES
+    mdf = pd.merge(df,fpl_aoi,how='outer',on='osm_id') #merged dataframe
+    mdf.drop(labels='NUTS-3_y',inplace=True,axis=1) #double because of the merge
+    mdf.rename({'NUTS-3_x':'NUTS-3'},inplace=True,axis=1) #and change the name back
+    
+    #DO THE RISK CALCULATION
+    RPs = [500,200,100,50,20,10]
+    curves = ["C1","C2","C3","C4","C5","C6","HZ"]
+    positions = [0,1,2,3,4]
+    tqdm.pandas(desc="EAD_{}".format(region))
+    mdf = mdf.progress_apply(lambda x: EAD_asset(x,RPs,curves,positions), axis=1)
+
+    return mdf
+
+#CORE MODEL? YES - BUT VERY SPECIFIC FOR THE SET OF DAMAGE CURVES USED IN THE EU-IMPLEMENTATION
+def EAD_asset(x,RPs,curves,positions):
+    """
+    Calculates the expected annual damage for one road segment (i.e. a row of the DataFrame containing the results)
+    based on the damage per return period and the flood protection level.
+    
+    
+    WARNING: THIS FUNCTION PROBABLY REALLY SLOWS DOWN THE OVERALL POST-PROCESSING SCRIPT (COMPARE ITS PERFORMANCE WITH
+    THE CLIMATE CHANGE SCRIPT) Most likely, the cause is the use of a loop and an if-statement for the manipulation; this is not
+    smart for a function that is applied on a DataFrame!!!
+    
+    Arguments:
+        *x* (Geopandas Series) - A row of the GeoPandas DataFrame containing all road segments, should have dam cols, rps, flood protection level 
+        *RPs* (List) - return periods of the damage data, in descending order e.g. [500,200,100,50,20,10]
+        *curves* (List) - short names of damage curves for which to calculate the EAD e.g. ["C1","C2","C3","C4","C5","C6","HZ"]
+        *positions* (List) - tuple positions of available max damage estimates e.g. [0,1,2,3,4]
+    
+    Returns:
+        *x* (Geopandas Series) - with added the new columns containing EADs
+    """
+    PL = x["Jongman_FP"]
+    RPs_copy = [y for y in RPs] #make a new list, or it will be altered in the function and mess up everything!!!
+    for curve in curves:
+        damcols = ["dam_{}_rp{}".format(curve,rp) for rp in RPs] #this was RPs; but somehow this did not work
+        EAD = [0,0,0,0,0] #initialize empty lists
+        for pos in positions: #iterate over all the max damage estimates
+            dam = list(x[damcols].apply(lambda y: pick_tuple(y,pos)).values) #creates a numpy array with the damage values of the desired max_dam
+            EAD[pos] = risk_FP(dam,RPs_copy,PL) 
+        if not curve == "HZ": #save results to the series, which will be returned as a row in the df
+            x["EAD_{}".format(curve)] = tuple(EAD)
+        else: 
+            x["EAD_HZ"] = EAD[0]
+    return x
+
+#CAN BE REPLACED BY VECTORIZED FUNCTION USED IN THE CLIMATE CHANGE MODULE
+def risk_FP(dam,RPs,PL):
+    """
+    Calculates the flood risk from damage estimates and corresponding return periods by trapezoidal integration, 
+    accounting for the flood protection in place. 
+    
+    Arguments:
+        *dam* (list) - damage estimates (e.g. Euro's) - from high to low RPs
+        *RPs* (list) - the return periods (in years) of the events corresponding to these damage estimates - from high to low RPs (order of both lists should match!) 
+        *PL* (integer) - the flood protection level in years
+    
+    Returns:
+        *risk* (float) - the estimated flood risk in Euro/y
+    
+    Note that this calculation is not trivial and contains important assumptions about the risk calculation:
+     - Damage for RPs higher than the largest RP equals the damage of the largest RP
+     - Damage for RPs lower than the smallest RP is 0.
+     - Damage of events in between known RPs are interpolated linearly with RP.
+    """
+    if not sorted(RPs, reverse=True) == RPs:
+        raise ValueError('RPs is not provided in the right format. Should be a descending list of RPs, e.g. [500,100,10]')
+    
+    if RPs[-1] < PL < RPs[0]: #if protection level is somewhere between the minimum and maximum available return period
+        pos = RPs.index(next(i for i in RPs if i < PL)) #find position of first RP value < PL; this is the point which need to be altered
+        dam = dam[0:pos+1] #remove all the values with smaller RPs than the PL
+        dam[pos] = np.interp(x=(1/PL),xp=[(1/RPs[pos-1]),(1/RPs[pos])],fp=[dam[pos-1],dam[pos]]) #interpolate the damage at the RP of the PL
+        #note that you should interpolate over the probabilities/frequences (therefore the 1/X), not over the RPs; this gives different results
+        RPs[pos] = PL #take the PL as the last RP...
+        RPs = RPs[0:pos+1] #... and remove all the other RPs
+
+    elif PL >= RPs[0]: #protection level is larger than the largest simulated event
+        return (1/PL) * dam[0] #damage is return frequence of PL times the damage of the most extreme event
+
+    #not necessary to check other condition (PL <= 10 year -> then just integrate over the available damages, don't assume additional damage)
+     
+    dam.insert(0,dam[0]) #add the maximum damage to the list again (for the 1:inf event)
+    Rfs = [1 / RP for RP in RPs] #calculate the return frequencies (probabilities) of the damage estimates
+    Rfs.insert(0,0) #add the probability of the 1:inf event
+    integral = np.trapz(y=dam,x=Rfs).round(2)
+    return integral
+
+
+
 #CORE MODEL? NO, SPECIFIC FOR EUROPE IMPLEMENTATION
 def lighting_blend(r):
     """
@@ -274,8 +318,6 @@ def lighting_blend(r):
     For motorways; the max_damage value is the 25% or 75%, based on the lighting metadata
     For all other roads, the 50% value is taken
     Scripts assumes all damage inputs as lenght-5 tuple: (0,0,0,0,0)
-    
-    Then
     
     """
     #select the damage/EAD columns; but not the HZ
@@ -356,73 +398,7 @@ def lighting_blend_only_curves(r):
     
     return r
 
-#CORE MODEL? FP-YES; AOI ONLY USED FOR CONNECTION WITH THE LISFLOOD MODEL
-def AoI_FP(region):
-    """
-    Determines for each OSM-ID, the Area of Influence (per return period) and the flood protection level according to Jongman
-    
-    Arguments:
-        *region* (string) -- name of the NUTS-3 region for which to do the analysis
-        
-    Returns:
-        *result_dict* (dictionary) -- key = region; value = keys: osm_id's; values: keys: Jongman FP; AoI per RP.
-        
-    Issues: 
-        - for some (incidental) osm-id's, there is no data in the Jongman raster -> this should be solved by 'nibbling the Jongman Raster (JRC took a different approach)'
-        - I found out that I used the wrong raster as input data -> rerun the whole model before this analysis is done. || should be solved in vs. 0.8
-    """
-    fpl_aoi_output = load_config()['paths']['fpl_aoi_output'] #load first, because you need for exception writing
-    try: 
-        #load paths
-        input_path = load_config()['paths']['input_data']
-        output_path = load_config()['paths']['output']
-        AoI_path = load_config()['paths']['aoi_data']
-        FP_name = load_config()['paths']['fpl_raster']      
-        #load filenames
-        NUTS3_shape = load_config()['filenames']['NUTS3-shape']
 
-        #check if path exists
-        if os.path.exists(os.path.join(fpl_aoi_output,"{}_AoI_FP.pkl".format(region))): 
-            print('{} already finished!'.format(region))
-            return None
-
-        df = pd.read_pickle(os.path.join(output_path,"{}.pkl".format(region))) #open the df
-        df = df.loc[df['osm_id'] != (0,0,0,0,0)] #remove erratic rows
-        #df = df.loc[0:10,:] #Can be used to test the script on only a few rows of each DF.
-        df.crs = {'init' :'epsg:4326'}
-        df = df.to_crs(epsg=3035) #change to same projection as the raster data
-        
-        NUTS_regions = gpd.read_file(os.path.join(input_path,NUTS3_shape))
-        geometry = NUTS_regions['geometry'].loc[NUTS_regions.NUTS_ID == region].values[0] #The NUTS-3 shape
-        geoms = [mapping(geometry)] #Convert to GeoJson file
-        
-        AoI_list = natsorted([os.path.join(AoI_path, x) for x in os.listdir(AoI_path) if x.endswith(".tif")]) #examine whole folder, select tifs, sort
-        AoI_names = ['rp10','rp20','rp50','rp100','rp200','rp500']
-
-        tqdm.pandas(desc=region)
-
-        for i, raster_path in enumerate(AoI_list): #iterate over all AoI rasters
-            df['AoI_{}'.format(AoI_names[i])] = df.geometry.progress_apply(lambda x: zonal_stats(x, raster_path,stats=['majority'],nodata=0,all_touched=True)[0]['majority'])
-
-
-        df['Jongman_FP'] = df.geometry.apply(lambda x: zonal_stats(x, FP_name, stats=['majority'],nodata=0,all_touched=True)[0]['majority'])
-
-        cols = ["osm_id","NUTS-3","Jongman_FP","AoI_rp10","AoI_rp20","AoI_rp50","AoI_rp100","AoI_rp200","AoI_rp500"]
-        df_sel = df[cols]
-        df_sel = df_sel.set_index('osm_id')
-        df_sel.to_pickle(os.path.join(fpl_aoi_output,"{}_AoI_FP.pkl".format(region)))
-
-        result_dict = {region : df_sel.to_dict(orient='index')}
-        print("{} finished!".format(region))
-        return(result_dict)
-    
-    except Exception as e:
-        log_mess = 'Failed to finish {} because of {}!'.format(region,e)
-        print(log_mess)
-        log_file = os.path.join(fpl_aoi_output,'AoI_FP_log_{}.txt'.format(os.getenv('COMPUTERNAME')))
-        file = open(log_file, mode="a")
-        file.write(log_mess)
-        file.close()
 
 def create_gridlines(ps,ms,point_spacing=1000):
     """

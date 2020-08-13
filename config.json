@@ -8,8 +8,8 @@
 		"hazard_data" : "D:\\Europe_trade_disruptions\\JRC_riverflood_Europe\\floodMaps_Europe_2018_mergedshifted",
         "fpl_raster" : "D:\\Europe_trade_disruptions\\ProtSt_Jongman\\floodProtection_v2019_5km_nibbled_downscaled_100_100.tif",
 		"output" : "D:\\Python\\OSdaMage\\main_output",
-        "fpl_aoi_output" : "D:\\Python\\OSdaMage\\fpl_aoi_output",        
-        "postproc_output" : "D:\\Python\\OSdaMage\\postproc_output"
+        "fpl_aoi_output" : "D:\\Python\\OSdaMage\\postproc_output\\fpl_aoi",        
+        "postproc_output" : "D:\\Europe_trade_disruptions\\EuropeFloodResults\\Model09_beta\\postproc"
 		},
     "filenames": {
         "default_lanes" : "default_lanes_temp.pkl",
