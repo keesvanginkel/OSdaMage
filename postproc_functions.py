@@ -101,7 +101,7 @@ def EAD_multi(region):
         *region* (string) - Name of the NUTS-3 region
         
     Returns:
-        *results* (DataFrame) - indices are road types; columns the EADS and the name of the region
+        *results* (DataFrame) - EAD_segment_litmix (see fourth pickle below)
         
     Also saves the intermediate results as pickles:
         *{NUTS3}_EAD_segment_raw* (DataFrame pickle) - the raw EAD results
@@ -177,7 +177,7 @@ def EAD_multi(region):
         
         return None
 
-    return None
+    return df2
 
 def EAD_region_segmentwise(region):
     """

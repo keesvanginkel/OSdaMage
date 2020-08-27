@@ -1,0 +1,42 @@
+
+
+Running region_loss_estimation for region: DE224 at time: Tue, 11 Aug 2020 14:01:48 +0000
+
+
+Failed to finish DE224 because of: 'NoneType' object has no attribute 'ExecuteSQL'
+
+
+Running region_loss_estimation for region: DE224 at time: Tue, 11 Aug 2020 14:05:05 +0000
+
+
+Loss calculation finished for region: DE224 at time: Tue, 11 Aug 2020 14:11:52 +0000
+
+
+Running region_loss_estimation for region: DE224 at time: Tue, 11 Aug 2020 14:18:54 +0000
+
+
+Running region_loss_estimation for region: DE224 at time: Tue, 11 Aug 2020 14:19:04 +0000
+
+
+Running region_loss_estimation for region: DE224 at time: Tue, 11 Aug 2020 14:19:18 +0000
+
+
+Running region_loss_estimation for region: DE224 at time: Tue, 11 Aug 2020 14:20:22 +0000
+
+
+Running region_loss_estimation for region: DE224 at time: Tue, 11 Aug 2020 14:31:06 +0000
+
+
+Running region_loss_estimation for region: DE224 at time: Tue, 11 Aug 2020 14:32:45 +0000
+
+
+Running region_loss_estimation for region: DE224 at time: Tue, 11 Aug 2020 14:37:04 +0000
+
+
+Loss calculation finished for region: DE224 at time: Tue, 11 Aug 2020 14:43:41 +0000
+
+
+Running region_loss_estimation for region: AL013 at time: Thu, 27 Aug 2020 09:18:59 +0000
+
+
+Loss calculation finished for region: AL013 at time: Thu, 27 Aug 2020 09:20:56 +0000
