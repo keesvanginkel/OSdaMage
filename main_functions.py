@@ -81,9 +81,9 @@ def region_loss_estimation(region, **kwargs):
             file.close()
 
         # SKIP IF REGION IS ALREADY FINISHED BY CHECKING IF OUTPUT FILE IS ALREADY CREATED
-        if os.path.exists(os.path.join(output_path,'{}.csv'.format(region))): 
-            print('{} already finished!'.format(region))
-            return None
+        #if os.path.exists(os.path.join(output_path,'{}.csv'.format(region))): 
+        #    print('{} already finished!'.format(region))
+        #    return None
 
         # IMPORT FLOOD CURVES AND DAMAGE DATA
         #Load the Excel file containing the OSM mapping and damage curves
@@ -558,9 +558,14 @@ def import_flood_curves(filename,sheet_name,usecols):
         curve_name[i] = headers[i*2]        
         curve = flood_curves.iloc[:,2*i:2*i+2].dropna()
         #curve x-values in the even; and y-values in the uneven columns
-        interpolators[i] = interp1d(curve.values[1:,0], curve.values[1:,1], 
+        interpolator = interp1d(curve.values[1:,0], curve.values[1:,1],
                                     fill_value=(curve.values[1,1],curve.values[-1,1]), bounds_error=False)
-    return OrderedDict(zip(curve_name,interpolators)) 
+        ### Check if the curve starts in the origin; if the unit row 4 in Excel is empty this might cause a
+        ### wrong reading of the curve
+        assert float(interpolator(0)) == 0.
+        interpolators[i] = interpolator
+
+    return OrderedDict(zip(curve_name,interpolators))
 
 
 #SECOND PART OF THE REPLACEMENT OF loss_estimations_flooding

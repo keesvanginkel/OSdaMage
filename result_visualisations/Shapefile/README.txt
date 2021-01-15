@@ -29,6 +29,7 @@ EAD_C1 ... C6 : expected annual damage per damage curve (Cx) [2015-euro/year]
 EAD_HZ : expected annual damage for Huizinga's damage function [idem]
 EAD_lowflow : expected annual damage under low-flow conditions according to new damage curves (C1-C6) [2015-euro/year]
 EAD_highflow : expected annual damage under high-flow conditions according to new damage curves (C1-C6) [2015-euro/year]
+EAD_avg : expected annual damage, average of highflow and lowflow.
 
 When no additional information about flow velocity is available, damage per road segment can be estimated by averaging the last two columns ("EAD_lowflow" + "EAD_higflow")/2
 
