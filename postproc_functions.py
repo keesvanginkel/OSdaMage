@@ -855,7 +855,7 @@ def aggregate_OSM_regions_pkl(regions,OSM_result_dir):
 def sample_OSM_regions_pkl(region):
     """
     From the deterministic EAD_segment_nomix.pkl for a region, 
-    this script samples 100 possible probabilistic realisation
+    this script samples 100 or 1000 possible probabilistic realisations
     
     Arguments:
         *region* (string) : Name of the NUTS-3 region
@@ -865,10 +865,15 @@ def sample_OSM_regions_pkl(region):
         *samples* (Panda Series) : 
     """
     print("{} sample OSM regions started".format(region))
+
     
     #Suppress a Pandas Warning
     pd.set_option('mode.chained_assignment', None)
     
+    #OUTPUT OF THE SAMPLING PROCEDURE
+    out_folder = load_config()['paths']['postproc_output_sampling']
+    
+    #INPUT TO THE SAMPLING PROCEDURE
     postproc_output = load_config()['paths']['postproc_output'] 
     data_path = os.path.join(postproc_output,'baseline',"{}_EAD_segment_nomix.pkl".format(region))
     df = pd.read_pickle(data_path) #open the dataframe containing the EAD_segment_nomix results
@@ -881,14 +886,17 @@ def sample_OSM_regions_pkl(region):
     df2 = dfA[dfA['road_type'].isin(['primary','secondary','tertiary','other'])]
     
     #PROCESS THE ROADS WITH STREET LIGHTING (SOPHISTICATED)
-    df11 = df1[~df1.lit.isna()] #no No street lighting (mostly with street lighting 'yes or '24/7')
+    #FIX 25/1/2021: SAMPLE THE STREET LIGHTS IN EXACTLY THE SAME WAY AS IN OTHER PARTS OF THE SCRIPT
+    #df11 = df1[~df1.lit.isna()] #no No street lighting (mostly with street lighting 'yes or '24/7')
+    df11 = df1[df1.lit.isin(['yes','24/7','automatic','disused'])] #Has street lighting
     df111 = df11[['EAD_C1','EAD_C2']] #Choose relevant damage curve
     df111.rename(columns={'EAD_C1':'low','EAD_C2':'high'},inplace=True) #Rename relevant damage curve
     df112 = df111.apply(lambda x: pick_tuples_randint(x,2,5),axis=1) #Choose on of the last three values as max damage
     df112
     
     #PROCESS ROADS WITHOUT STREET LIGHTING (CHEAP)
-    df12 = df1[df1.lit.isna()] #no street lighting
+    #Has no street lighting (FIX 25/1/2021: don't use the .isna() function, this will include NO!!!)
+    df12 = df1[~df1.lit.isin(['yes','24/7','automatic','disused'])] #no street lighting
     df121 = df12[['EAD_C3','EAD_C4']] #Choose relevant damage curve
     df121.rename(columns={'EAD_C3':'low','EAD_C4':'high'},inplace=True) #Rename relevant damage curve
     df122 = df121.apply(lambda x: pick_tuples_randint(x,0,3),axis=1) #Choose one of the first 3 values as max damage
@@ -912,9 +920,9 @@ def sample_OSM_regions_pkl(region):
     dfT3 = dfT2.sum(axis=0)
     dfT4 = dfT3.drop(labels=['low','high'])
     dfT4.name = region
-    dfT4.to_pickle(os.path.join(postproc_output,'baseline',"{}_EAD_total_sampled_1000.pkl".format(region)))
+    dfT4.to_pickle(os.path.join(out_folder,"{}_EAD_total_sampled_1000.pkl".format(region)))
     print("{} sample OSM regions finished".format(region))
-    return dfT4
+    return dfT2, dfT4
 
 def sample_zees(series,zs,sdvs=2):
     """
