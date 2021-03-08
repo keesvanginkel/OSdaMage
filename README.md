@@ -1,6 +1,8 @@
 # OSdaMage
 This repository contains a model to intersect all of Europe's roads in OpenStreetmap with flood hazard maps, and calculate direct flood damages for each road segment. The results of the model are published in the scientific journal Natural Hazards and Earth System Sciences: https://www.nat-hazards-earth-syst-sci-discuss.net/nhess-2020-104/ .
 
+[![DOI](https://zenodo.org/badge/279850493.svg)](https://zenodo.org/badge/latestdoi/279850493)
+
 The computational core of the model is derived from @ElcoK 's GMTRA model (https://github.com/ElcoK/gmtra). The main differences between OSdaMage and GMTRA are:
  - OSdaMage has strongly improved damage functions
  - OSdaMage makes more extensive use of the metadata (road attributes) available in OpenStreetMap
